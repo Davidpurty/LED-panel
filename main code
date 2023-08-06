@@ -1,0 +1,419 @@
+#include <ESP8266WiFi.h>
+#include<EEPROM.h>            
+//#include <ESP8266WebServer.h>
+#include <ESPAsyncWebServer.h>
+#include <ESPAsyncTCP.h>
+#include <Hash.h>
+#include "FS.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_NeoMatrix.h>
+#include <Adafruit_NeoPixel.h>
+
+// DATA PIN
+// If you want to use a different data pin on your microcontroller CHANGE THIS!
+#define DATA_PIN D4
+
+#define arr_len( x )  ( sizeof( x ) / sizeof( *x ) )
+
+// Matrix setup params
+Adafruit_NeoMatrix *matrix = new Adafruit_NeoMatrix(40, 8, 
+  DATA_PIN,
+  NEO_MATRIX_TOP     + NEO_MATRIX_LEFT +
+    NEO_MATRIX_ROWS + NEO_MATRIX_ZIGZAG,
+  NEO_GRB            + NEO_KHZ800 );
+
+
+int red=200,green=0,blue=0;
+int pixelPerChar = 4;
+int maxDisplacement;
+//int mode = 0;
+
+String string="";
+String favcolor="";
+String brightness = "";
+int s,p,h;
+int flag=1;
+// Replace with your network credentials
+
+const char* apssid     = "NOTICE BOARD FOR ECE DEPARTMENT2";
+const char* appassword = "qazxswedc123";
+const char* host = "192.168.4.1";
+const char* PARAM_INPUT_1 = "string";
+const char* PARAM_INPUT_2 = "favcolor";
+const char* PARAM_INPUT_3 = "brightness";
+int y = matrix->height();
+int x = matrix->width();
+
+
+AsyncWebServer server(80);
+const char webpage[] PROGMEM = R"rawliteral(
+ <!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>WebPage for RGB panel</title>
+    <style>
+        body {
+            background-color: rgb(255, 255, 255);
+            font-family: sans-serif;
+            color: #FCF3CF;
+        }
+        .main{
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100%;
+            align-items: center;
+            justify-content: space-between;
+            justify-items: end;
+
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 80vh;
+            width: 70%;
+            align-items: center;
+            background: linear-gradient(to right, rgb(3, 3, 3), rgb(54, 54, 54));
+
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 60px 60px 100px -1px rgb(0, 0, 0), -60px -60px 100px -1px rgba(201, 200, 200, 0.7);
+            opacity: .8;
+        }
+
+        h1 {
+            font-size: 60px;
+            margin-bottom: 40px;
+            text-align: center;
+            color: #FCF3CF;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        img {
+            width: 200px;
+            height: 90px;
+            border-radius: 0%;
+        }
+
+        input[type="text"],
+        input[type="color"],
+        select {
+            width: 80%;
+            height: 30px;
+            font-size: 18px;
+            margin-bottom: 20px;
+            padding: 5px;
+            border-radius: 10px;
+            border: none;
+            background-color: black;
+            color: #FCF3CF;
+            box-shadow: inset 4px 4px 5px -1px rgb(82, 81, 81),
+        inset -4px -4px 5px -1px rgb(119, 107, 107);
+}
+        
+
+        label {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+
+        input[type="submit"] {
+            width: 50%;
+            height: 50px;
+            font-size: 30px;
+            margin-top: 20px;
+            background-color: rgb(216, 13, 13);
+            color: rgb(246, 245, 245);
+            border: none;
+            border-radius: 10px;
+            margin-top: 20px;
+
+        }
+
+        .rangeslider {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            align-items: center;
+            justify-content: center;
+            color: #FCF3CF;
+            margin-top: 20px;
+        }
+
+        .myslider {
+            -webkit-appearance: none;
+            background: #FCF3CF;
+            width: 80%;
+            height: 20px;
+            opacity: 2;
+        }
+
+
+        .myslider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            cursor: pointer;
+            background: #34495E;
+            width: 5%;
+            height: 20px;
+        }
+
+
+        .myslider:hover {
+            opacity: 1;
+        }
+        .footer{
+           text-align: center;
+            color: rgb(55, 54, 54);
+            justify-content: center;
+            
+
+        }
+        .logo{
+            display: flex;
+            width: 90%;
+            justify-content: space-between;
+            align-items: center;
+
+        }
+      
+    </style>
+</head>
+
+<body>
+    
+    
+
+    <div class="main">
+        
+     <form action="/get">
+        <div class="logo">
+        <img  src="nitjsrlogo.png" alt="" style="height: 100px; width: 90px;">
+        <h1> RGB Panel Interface </h1>
+        <img  src="innorevalogowb.png" alt="" style="height: 100px; width: 100px;">
+        </div>
+        <label for="string"> </label>
+        <input type="text" id="string" name="string" placeholder="Enter string">
+        <br><br>
+           <label for="favcolor"> SELECT COLOR </label>
+             <input type="color" id="favcolor" name="favcolor" value="#ff0000"><br><br>
+               <label for="brightness"> ENTER BRIGHTNESS </label>
+                   <select name="brightness" id="brighness">
+                      <option value="20">20</option>
+                      <option value="40">40</option>
+                      <option value="60">60</option>
+                      <option value="80">80</option>
+                      <option value="100">100</option>
+                      <option value="120">120</option>
+                      <option value="140">140</option>
+                      <option value="160">160</option>
+                      <option value="180">180</option>
+                      <option value="200">200</option>
+                      <option value="220">220</option>
+                      <option value="240">240</option>
+                   </select>
+             <br><br>
+        <input type="submit" value="Submit">
+    </form>
+    <p class="footer">All Rights Reserved <br>
+    Devloped by  <b><i>David Hassa Purty </i></b> and <b><i>webpage-Sidharth Sharma</i></b><br>
+for <b>ECE Department NIT Jamshedpur</b></p>
+</div>
+    
+</body>
+
+</html>
+)rawliteral";
+//int red, green, blue;
+int l;
+void setup() {
+  // put your setup code here, to run once:
+Serial.begin(115200);
+  EEPROM.begin(512);
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+  WiFi.softAP(apssid, appassword);
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.softAPIP());
+  if(!SPIFFS.begin()){
+        Serial.println("An Error has occurred while mounting SPIFFS");
+        return;
+  }
+
+  //this portion reads the initial string, color and value of brightness
+  int x = EEPROM.read(0);
+    for(int i=0; i<x; i++){
+      string +=char(EEPROM.read(i+1));
+    }
+    int y = EEPROM.read(x+1);
+    for(int i=0; i<y; i++){
+      
+      favcolor+=char(EEPROM.read(i+x+2));
+      //Serial.println(EEPROM.read(i+s+2));
+    }
+    int z = EEPROM.read(x+y+2);
+    for(int i=0; i<z; i++){
+      brightness +=char(EEPROM.read(i+x+y+3));
+       //Serial.println(EEPROM.read(i+s+p+3));
+    }
+
+    //end of reading
+//turn_on_server();
+server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", webpage);
+    });
+    server.on("/nitjsrlogo.png", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/nitjsrlogo.png", "image/png");
+    });
+    server.on("/innorevalogowb.png", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/innorevalogowb.png", "image/png");
+    }); 
+    server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
+            
+    if (request->hasParam(PARAM_INPUT_1) && request->hasParam(PARAM_INPUT_2) && request->hasParam(PARAM_INPUT_3)) {
+      string = request->getParam(PARAM_INPUT_1)->value();
+      favcolor = request->getParam(PARAM_INPUT_2)->value();
+      brightness = request->getParam(PARAM_INPUT_3)->value();
+    }
+    Serial.println(string);
+    Serial.println(favcolor);
+    Serial.println(brightness);
+      s = string.length();
+      p = favcolor.length();
+      h = brightness.length();
+     l=s+p+h;
+     Serial.println(s);
+    Serial.println(p);
+    Serial.println(h);
+    EEPROM.write( 0 , s);
+   // EEPROM.commit();
+    for(int i=0; i<s; i++){
+      char b=string[i];    //to convert string[i] into 1 byte char
+      //Serial.print(b);     //print value before storing
+      EEPROM.write( i+1 , b);
+    //  EEPROM.commit();
+      //Serial.print(i+1);     //print address
+      char o=EEPROM.read(i+1);
+      //Serial.println(o);    //print value after reading
+    }
+    EEPROM.write( s+1 , p);
+   // EEPROM.commit();
+    for(int i=0; i<p; i++){
+      char f=favcolor[i];  //to convert string favcolor[i] into 1 byte char
+     // Serial.print(f);     //print value bfore storing
+      EEPROM.write( i+s+2 , f);
+     // EEPROM.commit();
+      //Serial.print(i+s+2);    //print address
+      char g=EEPROM.read(i+s+2);
+     // Serial.println(g);     //print value after reading
+    }
+    EEPROM.write( s+p+2 , h);
+    //EEPROM.commit();
+    for(int i=0; i<h; i++){
+      char m=brightness[i];    //to convert  string mode[i] into 1 byte char
+      //Serial.print(m);   //print value before storing
+      EEPROM.write( i+s+p+3 , m);
+     // EEPROM.commit();
+      //Serial.print(i+s+p+3);   //print address
+      char c=EEPROM.read(i+s+p+3);
+    //  Serial.println(c);    //print value after reading
+    }
+ 
+    EEPROM.commit();
+    
+    request->send(200, "text/plain", "The details you entered are successfully saved.");
+  }); 
+    // Start server (remembering its on port 80)
+   // Server.begin(); 
+   
+
+ Serial.println(string);
+ hexToRgb(favcolor,red,green,blue);
+ //Serial.println(Text);
+  matrix->begin();
+  matrix->setTextWrap(false);
+  int bright=brightness.toInt();
+  matrix->setBrightness(bright);
+  Serial.print("brightness:");
+  Serial.println(bright);
+  //int rc=red.toInt();
+  //int gc=green.toInt();
+  //int bc=blue.toInt();
+  Serial.print("red component:  ");
+  Serial.println(red);
+  Serial.print("green component:  ");
+  Serial.println(green);
+  Serial.print("blue component:  ");
+  Serial.println(blue);
+  matrix->setTextColor(matrix->Color(red,green,blue));  
+  server.begin();      
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+ matrix->fillScreen(0);
+  matrix->setCursor(x, 0);
+  scroll(string,100);
+}
+
+// scrolling function which scroll the given texts
+
+void scroll(String message,int delays) {
+  maxDisplacement = message.length() * pixelPerChar + matrix->width();
+ // if(++line_pass > matrix->width()) line_pass = 0;
+ hexToRgb(favcolor,red,green,blue);
+ int bright=brightness.toInt();
+  matrix->setBrightness(bright);
+  matrix->setTextColor(matrix->Color(red,green,blue));
+  matrix->print(message);
+  //Serial.println(Text);
+  //Serial.println(message);
+  //Serial.println(maxDisplacement);
+  if(--x < -maxDisplacement) {
+    x = matrix->width();
+  }
+  matrix->show();
+  delay(delays);
+}
+
+
+//function to convert hexadecimal number of color code into decimal number code
+
+int hexCharToDecimal(char hex) {
+   if(hex>='0'&&hex<='9')
+{
+  return hex -'0';
+}
+else if(hex>='A'&&hex<='F')
+{
+  return hex - 'A' + 10;
+}
+else if(hex>='a'&&hex<='f')
+{
+  return hex - 'a' + 10;
+}
+else {
+  return -1;
+}
+}
+
+// function to convert a hex color code to its RGB values
+int hexToRgb(String hexColor, int& red, int& green, int& blue) {
+    // remove the '#' symbol, if present
+    
+    
+    // convert the hexadecimal string to decimal values for red, green, and blue
+    red = hexCharToDecimal(hexColor[1]) * 16 + hexCharToDecimal(hexColor[2]);
+    green = hexCharToDecimal(hexColor[3]) * 16 + hexCharToDecimal(hexColor[4]);
+    blue = hexCharToDecimal(hexColor[5]) * 16 + hexCharToDecimal(hexColor[6]);
+    return(red,green,blue);
+}
